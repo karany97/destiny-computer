@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 [![Composes with: Destiny Atelier](https://img.shields.io/badge/composes%20with-Destiny%20Atelier-c2410c)](https://github.com/karany97/nandai-atelier)
 [![Stack: KasmVNC + Anthropic Computer Use](https://img.shields.io/badge/stack-KasmVNC%20%2B%20Anthropic%20Computer%20Use-3b82f6)](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
-[![Tests](https://img.shields.io/badge/tests-360%2F360-22c55e)](./driver/src)
+[![Tests](https://img.shields.io/badge/tests-406%2F406-22c55e)](./driver/src)
 
 </div>
 
@@ -225,15 +225,14 @@ First boot downloads ~70 GB of Holo3 weights to the `holo3-models`
 named volume (survives `docker compose down`; ~30 s on subsequent
 boots).
 
-**Important — partial ship**: this PR (closing TRACKING D5a) ships the
-**compose sidecar + the ANTHROPIC_API_KEY precondition relaxation**.
-The actual `loop.py` routing — converting Anthropic `tool_use` blocks
-to/from Holo3's OpenAI-shaped responses — is the **v0.3 follow-up**
-filed as [issue #11 (D5b)](https://github.com/karany97/destiny-computer/issues/11).
-Until D5b lands, operators can curl the sidecar directly at
-`http://localhost:8000/v1` (if they add a `ports:` line) or call it
-from inside the driver container at `http://holo3:8000/v1`. The full
-auto-routing arrives in v0.3 (Jul 2026).
+The `loop.py` autonomous loop now routes through `vision.py`'s
+`Holo3VisionBackend` automatically when `VISION_BACKEND=local-uitars`
+(`anthropic` stays the default for v0.2.x back-compat). Every action
+(`click`/`type`/`key`/`scroll`/`wait`/`done`) round-trips through
+Holo3 and the existing desktop dispatcher — no Anthropic credits
+consumed. `cost_usd` reports as `$0.00` for every local step (tokens
+still captured in the ledger so operators can see "5 Holo3 calls
+today, $0.00" instead of nothing).
 
 ## Security
 

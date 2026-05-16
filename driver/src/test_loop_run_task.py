@@ -69,7 +69,17 @@ def stub_screenshot(monkeypatch):
 @pytest.fixture
 def stub_anthropic(monkeypatch):
     """Stub the Anthropic client constructor + messages.create. Returns
-    a list of fake_resp responses that the loop will consume one per step."""
+    a list of fake_resp responses that the loop will consume one per step.
+
+    Post-D5b (issue #11): the Anthropic SDK instantiation moved from
+    loop.py to vision.AnthropicVisionBackend. We patch
+    `vision.Anthropic` so when AnthropicVisionBackend() is constructed
+    inside run_task, it gets the fake client.
+
+    Also force VISION_BACKEND=anthropic so the loop routes through
+    AnthropicVisionBackend (the default, but be explicit so a stray
+    env var in CI doesn't flip these tests onto the Holo3 path)."""
+    monkeypatch.setenv("VISION_BACKEND", "anthropic")
     responses: list = []
 
     def _create(**kwargs):
@@ -79,7 +89,8 @@ def stub_anthropic(monkeypatch):
 
     fake_client = MagicMock()
     fake_client.beta.messages.create = _create
-    monkeypatch.setattr(L, "Anthropic", lambda **_: fake_client)
+    import vision as V  # type: ignore[import-not-found]
+    monkeypatch.setattr(V, "Anthropic", lambda **_: fake_client)
     return responses  # mutate to script behavior
 
 
@@ -188,7 +199,9 @@ def test_run_task_handles_anthropic_api_error(tmp_path, stub_screenshot, monkeyp
             return self.message
 
     fake_client.beta.messages.create = MagicMock(side_effect=FakeAPIError())
-    monkeypatch.setattr(L, "Anthropic", lambda **_: fake_client)
+    import vision as V  # type: ignore[import-not-found]
+    monkeypatch.setenv("VISION_BACKEND", "anthropic")
+    monkeypatch.setattr(V, "Anthropic", lambda **_: fake_client)
 
     transcript = L.run_task(
         goal="g", task_id="t1",

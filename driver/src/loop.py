@@ -47,8 +47,10 @@ from anthropic import Anthropic, APIError
 # directly with the parent dir on PYTHONPATH and no __init__.py).
 try:
     from . import desktop as D  # ✱ relative for in-package import
+    from . import vision
 except ImportError:
     import desktop as D  # type: ignore[no-redef]
+    import vision  # type: ignore[no-redef]
 
 log = logging.getLogger(__name__)
 
@@ -259,7 +261,7 @@ def run_task(
         _flush_transcript(transcript, transcript_file)
         return transcript
 
-    # Determine actual screen size — pass to the tool config so the model
+    # Determine actual screen size — passed to the backend so the model
     # uses correct coordinates. Falls back to env default if introspection fails.
     try:
         w, h = D.get_screen_size()
@@ -271,127 +273,96 @@ def run_task(
         except Exception:
             w, h = 1280, 720
 
-    tool_config = [{
-        "type": COMPUTER_TOOL_VERSION,
-        "name": "computer",
-        "display_width_px": w,
-        "display_height_px": h,
-        "display_number": 1,
-    }]
+    # D5b — vision-backend abstraction (was: hard-coded Anthropic).
+    # `get_backend()` keys on $VISION_BACKEND (defaults anthropic).
+    # backend.initial_history seeds the conversation; backend.step
+    # makes one model call + returns a normalized StepResult; backend
+    # .append_action_result writes the action outcome + next screenshot
+    # in the backend's expected message shape.
+    try:
+        backend = vision.get_backend()
+    except (ValueError, RuntimeError) as e:
+        transcript.status = "api_error"
+        transcript.error = f"backend init failed: {e}"
+        transcript.finished_at = time.time()
+        _flush_transcript(transcript, transcript_file)
+        return transcript
 
-    system_prompt = (
-        "You are Destiny — an AI that drives a persistent Linux desktop on behalf "
-        "of the operator. Use the `computer` tool to take actions (click, type, "
-        "scroll). When you've achieved the goal, reply with a short summary in "
-        f"plain text and STOP. Display is {w}x{h}. Be efficient — each action "
-        "costs the operator real money."
-    )
+    # Capture first screenshot. If this fails, the desktop is unreachable —
+    # surface as desktop_error so the operator can debug.
+    try:
+        first_png = D.screenshot()
+    except D.DesktopError as e:
+        transcript.status = "desktop_error"
+        transcript.error = f"initial screenshot failed: {e}"
+        transcript.finished_at = time.time()
+        _flush_transcript(transcript, transcript_file)
+        return transcript
 
-    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-
-    # Conversation starts with: user text (goal) + an initial screenshot,
-    # so the model never has to ask for one explicitly.
-    messages: List[Dict[str, Any]] = [{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": f"Goal: {goal}"},
-            _take_screenshot_block(),
-        ],
-    }]
+    messages = backend.initial_history(goal, first_png, (w, h))
 
     for step in range(1, max_steps + 1):
         step_started = time.time()
 
-        # 1. Call the model
+        # 1. Call the model via the backend
         try:
-            resp = client.beta.messages.create(
-                model=MODEL,
-                max_tokens=4096,
-                system=system_prompt,
-                tools=tool_config,
-                messages=messages,
-                betas=[ANTHROPIC_BETA],
-            )
-        except APIError as e:
+            result = backend.step(messages, (w, h))
+        except (APIError, RuntimeError) as e:
             transcript.status = "api_error"
             transcript.error = f"step {step}: {e}"
             transcript.finished_at = time.time()
             _flush_transcript(transcript, transcript_file)
             return transcript
 
-        # 2. Accumulate cost
-        usage = getattr(resp, "usage", None)
-        in_tok = getattr(usage, "input_tokens", 0) if usage else 0
-        out_tok = getattr(usage, "output_tokens", 0) if usage else 0
-        cost = _price_call(MODEL, in_tok, out_tok)
+        # 2. Accumulate cost (zero for local backends)
+        cost = result.cost_usd
         transcript.total_cost_usd += cost
         _record_cost(ledger_file, task_id, cost, step)
+        text_from_model = result.text
 
-        # 3. Find the tool_use block (if any) and the text
-        tool_use = None
-        text_pieces = []
-        for block in resp.content:
-            if getattr(block, "type", None) == "tool_use":
-                tool_use = block
-            elif getattr(block, "type", None) == "text":
-                text_pieces.append(block.text)
-        text_from_model = "\n".join(text_pieces).strip() or None
-
-        # Echo the assistant turn into messages (verbatim, blocks preserved)
-        messages.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})
-
-        # 4a. No tool_use → model declared completion
-        if tool_use is None:
+        # 3a. Finish — model declared completion (text-only)
+        if result.finish:
             transcript.status = "completed"
             transcript.final_text = text_from_model or "(model stopped without text)"
             transcript.finished_at = time.time()
             transcript.steps.append(StepRecord(
-                step=step,
-                started_at=step_started,
-                finished_at=time.time(),
-                action=None,
-                desktop_result=None,
-                text_from_model=text_from_model,
-                cost_usd=cost,
+                step=step, started_at=step_started, finished_at=time.time(),
+                action=None, desktop_result=None,
+                text_from_model=text_from_model, cost_usd=cost,
             ))
             if progress_cb:
                 progress_cb(transcript, transcript.steps[-1])
             _flush_transcript(transcript, transcript_file)
             return transcript
 
-        # 4b. Execute the action
-        action_input = tool_use.input
+        # 3b. Execute the action
+        action_input = result.action or {}
         try:
-            result = _dispatch_action(action_input)
-            desktop_msg = result.message
-            tool_result_content: List[Dict[str, Any]] = [
-                {"type": "text", "text": desktop_msg},
-                _take_screenshot_block(),
-            ]
-            is_error = False
+            disp_result = _dispatch_action(action_input)
+            desktop_msg = disp_result.message
+            action_ok = True
         except D.DesktopError as e:
             desktop_msg = f"desktop error: {e}"
-            tool_result_content = [{"type": "text", "text": desktop_msg}]
-            is_error = True
+            action_ok = False
 
-        messages.append({
-            "role": "user",
-            "content": [{
-                "type": "tool_result",
-                "tool_use_id": tool_use.id,
-                "content": tool_result_content,
-                **({"is_error": True} if is_error else {}),
-            }],
-        })
+        # Capture next screenshot for the response turn. Reuse the
+        # last good screenshot if the post-action one fails (don't crash
+        # the loop just because xwd hiccupped once).
+        try:
+            next_png = D.screenshot()
+        except D.DesktopError as e:
+            log.warning("post-action screenshot failed: %s; reusing prior", e)
+            next_png = first_png  # fall back to bootstrap shot
 
-        # 5. Record + progress
+        messages = backend.append_action_result(
+            messages, result, desktop_msg, action_ok, next_png,
+        )
+
+        # 4. Record + progress
         record = StepRecord(
-            step=step,
-            started_at=step_started,
-            finished_at=time.time(),
+            step=step, started_at=step_started, finished_at=time.time(),
             action=dict(action_input) if isinstance(action_input, dict) else None,
-            desktop_result=desktop_msg,
-            text_from_model=text_from_model,
+            desktop_result=desktop_msg, text_from_model=text_from_model,
             cost_usd=cost,
         )
         transcript.steps.append(record)
@@ -399,7 +370,7 @@ def run_task(
             progress_cb(transcript, record)
         _flush_transcript(transcript, transcript_file)
 
-        # 6. Budget guards
+        # 5. Budget guards (anthropic-only effectively; Holo3 cost is 0)
         if today_spend(ledger_file) >= max_usd_per_day:
             transcript.status = "budget_exceeded_usd"
             transcript.error = (
