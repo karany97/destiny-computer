@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 [![Composes with: Destiny Atelier](https://img.shields.io/badge/composes%20with-Destiny%20Atelier-c2410c)](https://github.com/karany97/nandai-atelier)
 [![Stack: KasmVNC + Anthropic Computer Use](https://img.shields.io/badge/stack-KasmVNC%20%2B%20Anthropic%20Computer%20Use-3b82f6)](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
-[![Tests](https://img.shields.io/badge/tests-406%2F406-22c55e)](./driver/src)
+[![Tests](https://img.shields.io/badge/tests-424%2F424-22c55e)](./driver/src)
 
 </div>
 
@@ -136,6 +136,24 @@ cp .env.example .env
 docker compose up -d
 # → KasmVNC desktop at  http://localhost:6901  (password from .env)
 # → Driver health at    http://localhost:8090/health
+```
+
+### Verify your install
+
+```bash
+# stdlib-only, no pip install. Walks /health → /screenshot → /api/budget
+# → /api/tasks → /api/desktop/snapshot lifecycle. Reports PASS/FAIL per
+# check; exits 0 if all green, 1 if any fail. Won't dispatch a real
+# Anthropic task by default (set SMOKE_RUN_TASK=1 to opt in — costs $).
+python3 scripts/launch-smoke.py
+```
+
+Operators behind bearer auth pass the token:
+
+```bash
+DRIVER_URL=http://localhost:8090 \
+DESTINY_API_TOKEN=$(grep DESTINY_API_TOKEN .env | cut -d= -f2) \
+python3 scripts/launch-smoke.py
 ```
 
 ### Pair with Destiny Atelier
