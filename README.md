@@ -40,6 +40,15 @@ chat ships a right-pane iframe that embeds this desktop.
                                 └────────────────────────────┘
 ```
 
+## What "the desktop" actually looks like
+
+![Live operator-desktop desktop driven by the v0.2 driver](./docs/screenshots/01_live_desktop.png)
+
+*Captured via the driver's own `/screenshot` endpoint against `operator-desktop`
+(linuxserver/webtop:ubuntu-xfce, 1368x1360, 13-day uptime as of 2026-05-16).
+The same PNG path the Anthropic Computer Use loop sends to the model on
+every iteration — this is what the AI sees when deciding the next click.*
+
 ## Why this isn't OpenHands or Claude Cowork or E2B
 
 **OpenHands** — open source, has a browser+terminal loop, but the UX is
