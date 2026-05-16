@@ -367,9 +367,13 @@ def budget() -> JSONResponse:
 
 if __name__ == "__main__":
     import uvicorn
+    # HOST defaults to 0.0.0.0 (container deploy) but operators on a host-
+    # deploy can lock it to 127.0.0.1 so the driver is only reachable via
+    # an upstream proxy (recommended — /api/task spends real Anthropic
+    # credits, you don't want it exposed on the LAN).
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", 8090)),
         log_level=os.environ.get("LOG_LEVEL", "info"),
     )
