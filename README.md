@@ -41,7 +41,7 @@ For the **multi-session** flavor — N Sway/Wayland sessions behind one
 FastAPI fleet, swappable open-weights model
 ([Holo3-35B-A3B](https://huggingface.co/HCompany/Holo3-35B-A3B), Apache
 2.0, OSWorld-Verified 77.8%), iframe-embed any session anywhere — see
-the sibling repo `karany97/atelier-os` (opens this week).
+the sibling repo [karany97/atelier-os](https://github.com/karany97/atelier-os).
 
 Same `/api/computer/*` shape, so atelier wires up to either with
 zero changes.
