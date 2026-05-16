@@ -2,11 +2,12 @@
 
 # Destiny Computer
 
-### A long-lived Linux desktop that an AI owns.<br/>You watch it work. You take over the keyboard whenever you want.<br/>Your files persist between sessions.
+### The body for every employee's AI.<br/>A persistent Linux desktop the AI owns, the operator watches, the team can grab the mouse anytime.<br/>$0.05–$0.40 per task. Your data never leaves your network.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 [![Composes with: Destiny Atelier](https://img.shields.io/badge/composes%20with-Destiny%20Atelier-c2410c)](https://github.com/karany97/nandai-atelier)
 [![Stack: KasmVNC + Anthropic Computer Use](https://img.shields.io/badge/stack-KasmVNC%20%2B%20Anthropic%20Computer%20Use-3b82f6)](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
+[![Tests](https://img.shields.io/badge/tests-20%2F20-22c55e)](./driver/src/test_desktop.py)
 
 </div>
 
@@ -17,12 +18,22 @@
 A `docker compose up` that gives you a **persistent Linux desktop**
 (Ubuntu + Firefox + a real shell + Python + whatever else you install)
 reachable in your browser via [KasmVNC](https://kasmweb.com/kasmvnc),
-paired with a **driver** that takes natural-language goals from any
-chat surface, screenshots the desktop, decides the next click, and
-narrates the result back to the chat.
+paired with a **driver** (v0.2 — real Anthropic Computer Use loop) that
+takes natural-language goals from any chat surface, screenshots the
+desktop, decides the next click, executes via `xdotool`, and streams
+step records back via Server-Sent-Events.
 
-It's the *body* for a chat. Designed to pair with [Destiny Atelier](https://github.com/karany97/nandai-atelier) — the single-file
-chat ships a right-pane iframe that embeds this desktop.
+It's the *body* for every employee's AI. Part of the
+[Destiny ecosystem](https://github.com/karany97/nandai-atelier/blob/main/docs/ECOSYSTEM.md):
+the chat ([atelier](https://github.com/karany97/nandai-atelier)) dispatches
+goals; this repo turns them into clicks; the operator watches both
+surfaces in one window. Hand off, take back, never sign in to a SaaS
+to do it.
+
+We run this in production with one desktop per team member (Karan,
+Janvi, Devika, Priya, Aayush). The container persists `/home/operator/`
+between restarts so the AI's work — open tabs, generated scripts, ssh
+keys it created, partial downloads — survives reboots.
 
 ```
    ┌──────────────────┐         ┌────────────────────────────┐
