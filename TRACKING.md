@@ -68,20 +68,19 @@ Each entry has:
   - `POST /api/desktop/restore {snapshot_id}` → 202. Captures current container's port bindings + volume mounts + env via `docker inspect`, stops + removes it, runs new from `snapshot.tag` with the same config. Bind-mounted `/home/operator` survives across restore (the snapshot captures the writable layer, not the volume). Filters out docker-auto envs (PATH/HOSTNAME/HOME) so the new image's defaults apply. 404 if snapshot unknown, 500 on docker run failure, 503 if current container unreachable. Caller polls `/health` to know when the new desktop is ready (~3-10s).
 - **Tests**: +49 (`test_snapshot.py`) — `_docker` wrapper (4 incl. timeout/missing-CLI), `create_snapshot` (7 incl. happy path, container-not-running 503, container-missing, commit-fails, size-lookup-degrades-gracefully, metadata append, unique-id), `list_snapshots` (4 incl. sort + malformed skip + empty-line skip), `get_snapshot` (2), `delete_snapshot` (6 incl. most-recent guard, unknown-id, empty-store, image-rm invoked), `restore_snapshot` (6 incl. unknown-id, preserves ports + binds, filters docker-auto envs, missing current container, garbled inspect JSON, docker run failure), endpoint behaviour (15 incl. all 4 routes × all status codes), auth gating (4 — all routes require token when set). Total now **334/334 in 2.37s**.
 
-### D5 — ([#7](https://github.com/karany97/destiny-computer/issues/7)) Local-vision backend (no Anthropic dependency)
+### D5a — (CLOSED via PR #12, [#7](https://github.com/karany97/destiny-computer/issues/7)) ✅ Local-vision sidecar + ANTHROPIC_API_KEY precondition relaxation
 
-- **What**: Currently every task spends real money on Anthropic
-  Computer Use. Operators on a tight budget can't run the loop at
-  all.
-- **Where**: `loop.py` is hard-coded to the Anthropic SDK; the v0.2
-  README mentions `VISION_BACKEND=local-uitars` as a future option
-  but it's not wired.
-- **Why deferred**: Holo3-35B-A3B exists and is open-weights but
-  needs a 24 GB GPU and ~2 min to spin up — non-trivial to ship
-  inside the same `docker compose up` story.
-- **Acceptance**: Optional compose profile `local-vision` that runs
-  vLLM with Holo3, `VISION_BACKEND=local-uitars` actually routes
-  through it.
+- **What**: Pre-PR, the v0.2 README mentioned `VISION_BACKEND=local-uitars` as a future option but the operator path was non-existent: no compose sidecar, AND `ANTHROPIC_API_KEY` was a hard requirement at compose level (`:?required`) regardless of which backend the driver was meant to use.
+- **Where**: `compose/docker-compose.yml` — new `local-vision` profile + `holo3-models` named volume + driver env wiring; `driver/src/main.py::submit_task` precondition check.
+- **Resolution**: Ships the sidecar half of D5 (mirroring atelier-os S6 / PR #16). Opt-in `local-vision` compose profile spins up `vllm/vllm-openai:latest` serving Holo3-35B-A3B with safe defaults (24 GB GPU, `--max-model-len 16384`, `--gpu-memory-utilization 0.85`, `--enforce-eager`). Weights cached in `holo3-models` named volume (~70 GB; survives `docker compose down`). Healthcheck `start_period: 600s` accommodates first-boot weight load. NVIDIA GPU reservation refuses to start on non-GPU host (loud failure > silent CPU OOM). Driver auto-resolves `HOLO3_ENDPOINT=http://holo3:8000/v1` via compose-network DNS. `ANTHROPIC_API_KEY` now optional in compose (defaults to empty); main.py's submit_task precondition only fires when `VISION_BACKEND=anthropic`. Driver does NOT depends_on holo3 (preserves default `up` on non-GPU hosts + the anthropic path).
+- **Tests**: +26 (`test_holo3_profile.py`) — compose structure (12 incl. profile gating, GPU reservation, --enforce-eager regression guard, named volume, healthcheck start_period), driver env wiring (6 incl. auto-discover sidecar + ANTHROPIC_API_KEY no-longer-required-in-compose + driver doesn't depends_on holo3), precondition relaxation (3 — local backend works without ANTHROPIC_API_KEY; anthropic backend still 500s without it), docs (3 incl. TRACKING split into D5a/D5b), scan-before-push (2). Total now **360 unit = 360**.
+
+### D5b — ([#11](https://github.com/karany97/destiny-computer/issues/11)) Wire VISION_BACKEND=local-uitars routing in loop.py (v0.3)
+
+- **What**: The sidecar is up + reachable (closed as D5a) but `loop.py` still always calls Anthropic Computer Use. `VISION_BACKEND=local-uitars` is currently effective for the precondition check but not the actual model call. Operators can curl the sidecar directly today.
+- **Where**: `driver/src/loop.py::run_task` calls `client.beta.messages.create(...)` directly.
+- **Why deferred**: Vision-backend abstraction (~500 LOC + ~30 tests) is bigger than a single-PR cadence. Includes Holo3 JSON action parsing (different shape from Anthropic `computer_20251124` tool_use blocks) + refactoring loop.py to use the abstraction without breaking the 21 existing test_loop_run_task.py tests that stub the Anthropic SDK directly.
+- **Acceptance**: see issue #11 — new `driver/src/vision.py` with `VisionBackend` abstract base + `AnthropicVisionBackend` + `Holo3VisionBackend` + factory keyed on env; `loop.run_task` refactored to call `backend.step(...)` instead of the SDK directly; Holo3 response parser; optional graceful fallback. Targets v0.3 (Jul 2026 milestone).
 
 ### D6 — ([#8](https://github.com/karany97/destiny-computer/issues/8)) Multi-user `/api/task` (different operator personas) — OUT OF SCOPE
 
