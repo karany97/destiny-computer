@@ -57,17 +57,16 @@ Each entry has:
 - **Resolution**: In-memory leaky-bucket keyed by Bearer token (when `DESTINY_API_TOKEN` is set) or by client IP. Default 10/min, configurable via `DESTINY_TASK_RATE_LIMIT` env in format `N/PERIOD` where PERIOD ∈ {sec, min, hour}. Invalid spec → safe default. Returns 429 + `Retry-After` header on overflow (RFC 6585). Bucket state lives in driver memory only — restart clears it (the `MAX_USD_PER_DAY` cap on disk is the cumulative-spend safety net). Rate-limit dep runs AFTER auth so a 401 doesn't consume a slot (regression-guarded — otherwise an attacker could spam bad tokens to exhaust the bucket).
 - **Tests**: +25 (`test_rate_limit.py`) — `_parse_rate_limit` (6 incl. invalid/zero/case-insensitive fallbacks), `_client_id` (4 incl. token-preferred + IP fallback + missing client), `_rate_limit_check` (5 incl. under-cap, at-cap, refill-after-period, per-client isolation, Retry-After floor), endpoint (8 incl. 202/429 paths, Retry-After header, configured-spec in error message, default 10/min, per-token isolation, 401 doesn't consume slot, restart evaporates state), regression guards (2). Total now **285/285 in 1.88s**.
 
-### D4 — ([#6](https://github.com/karany97/destiny-computer/issues/6)) Snapshot/restore for the desktop container
+### D4 — (CLOSED via PR #10, [#6](https://github.com/karany97/destiny-computer/issues/6)) ✅ Snapshot/restore for the desktop container
 
-- **What**: There's no equivalent of `POST /api/desktop/snapshot` to
-  freeze a "trained" desktop state (logged-in browser sessions,
-  installed apps) and clone it into a new container.
-- **Where**: doesn't exist
-- **Why deferred**: `docker commit destiny-desktop <tag>` works
-  manually; this is sugar on top.
-- **Acceptance**: `POST /api/desktop/snapshot` returns a snapshot id;
-  `POST /api/desktop/restore {snapshot_id}` swaps the running
-  container for one based on the snapshot.
+- **What**: There was no API to freeze a "trained" desktop state (logged-in browser sessions, installed apps, customized configs) and roll back or branch from it. Operators were stuck with manual `docker commit` + `docker run`.
+- **Where**: `driver/src/snapshot.py` (NEW, 230 LOC) + 4 endpoints in `driver/src/main.py`
+- **Resolution**: 4 new endpoints, all gated by `require_token`:
+  - `POST /api/desktop/snapshot {note}` → 201 + Snapshot record (id, tag, created_at, size_bytes, note). Calls `docker inspect` to verify the container is running, `docker commit destiny-desktop destiny-desktop-snapshot:<id>` to capture the image, `docker image inspect` for size. Refuses 503 if container unreachable, 500 if commit fails.
+  - `GET /api/desktop/snapshots` → list most-recent first. Skips malformed metadata rows.
+  - `DELETE /api/desktop/snapshots/{id}` → removes `docker image rm` + drops the metadata row. 404 if unknown id, **409 if it's the most-recent** (safeguard so operators can't accidentally orphan their only restore point — must create a fresher snapshot first to delete it).
+  - `POST /api/desktop/restore {snapshot_id}` → 202. Captures current container's port bindings + volume mounts + env via `docker inspect`, stops + removes it, runs new from `snapshot.tag` with the same config. Bind-mounted `/home/operator` survives across restore (the snapshot captures the writable layer, not the volume). Filters out docker-auto envs (PATH/HOSTNAME/HOME) so the new image's defaults apply. 404 if snapshot unknown, 500 on docker run failure, 503 if current container unreachable. Caller polls `/health` to know when the new desktop is ready (~3-10s).
+- **Tests**: +49 (`test_snapshot.py`) — `_docker` wrapper (4 incl. timeout/missing-CLI), `create_snapshot` (7 incl. happy path, container-not-running 503, container-missing, commit-fails, size-lookup-degrades-gracefully, metadata append, unique-id), `list_snapshots` (4 incl. sort + malformed skip + empty-line skip), `get_snapshot` (2), `delete_snapshot` (6 incl. most-recent guard, unknown-id, empty-store, image-rm invoked), `restore_snapshot` (6 incl. unknown-id, preserves ports + binds, filters docker-auto envs, missing current container, garbled inspect JSON, docker run failure), endpoint behaviour (15 incl. all 4 routes × all status codes), auth gating (4 — all routes require token when set). Total now **334/334 in 2.37s**.
 
 ### D5 — ([#7](https://github.com/karany97/destiny-computer/issues/7)) Local-vision backend (no Anthropic dependency)
 

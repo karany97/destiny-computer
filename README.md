@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 [![Composes with: Destiny Atelier](https://img.shields.io/badge/composes%20with-Destiny%20Atelier-c2410c)](https://github.com/karany97/nandai-atelier)
 [![Stack: KasmVNC + Anthropic Computer Use](https://img.shields.io/badge/stack-KasmVNC%20%2B%20Anthropic%20Computer%20Use-3b82f6)](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
-[![Tests](https://img.shields.io/badge/tests-285%2F285-22c55e)](./driver/src)
+[![Tests](https://img.shields.io/badge/tests-334%2F334-22c55e)](./driver/src)
 
 </div>
 
@@ -228,6 +228,9 @@ Full threat model in [docs/security.md](./docs/security.md).
 | `ATELIER_URL` | *(empty)* | If set, the driver reports back to this Atelier instance via webhook |
 | `DESTINY_API_TOKEN` | *(empty = no auth)* | Optional Bearer-token gate on `/api/*` + `/screenshot`. Generate: `openssl rand -hex 32` |
 | `DESTINY_TASK_RATE_LIMIT` | `10/min` | Per-client (token or IP) leaky-bucket on `POST /api/task`. Format `N/{sec,min,hour}`. 429 + `Retry-After` on overflow. |
+| `DESTINY_SNAPSHOT_REPO` | `destiny-desktop-snapshot` | Docker image repo for `POST /api/desktop/snapshot` tags |
+| `DESTINY_SNAPSHOT_TIMEOUT_S` | `60` | `docker commit` ceiling — bump if your desktop is huge |
+| `DESTINY_RESTORE_TIMEOUT_S` | `60` | `docker run` ceiling for `POST /api/desktop/restore` |
 | `MAX_STEPS_PER_TASK` | `30` | Hard cap on autonomous action steps per goal |
 | `MAX_USD_PER_DAY` | `1.00` | Anthropic budget cap |
 | `VISION_BACKEND` | `anthropic` | `anthropic` \| `local-uitars` \| `local-moondream` (v0.2+) |
