@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 [![Composes with: Destiny Atelier](https://img.shields.io/badge/composes%20with-Destiny%20Atelier-c2410c)](https://github.com/karany97/nandai-atelier)
 [![Stack: KasmVNC + Anthropic Computer Use](https://img.shields.io/badge/stack-KasmVNC%20%2B%20Anthropic%20Computer%20Use-3b82f6)](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
-[![Tests](https://img.shields.io/badge/tests-334%2F334-22c55e)](./driver/src)
+[![Tests](https://img.shields.io/badge/tests-360%2F360-22c55e)](./driver/src)
 
 </div>
 
@@ -205,6 +205,36 @@ Default `.env.example` uses Anthropic Computer Use because it's the
 SOTA today; switch to local vision when v0.2 lands (or earlier if
 you're brave).
 
+### Local vision (issue #7 — opt-in `local-vision` compose profile)
+
+The `local-vision` compose profile ships a vLLM sidecar serving
+[Holo3-35B-A3B](https://huggingface.co/Hcompany/Holo3-35B-A3B) (the
+#1 OSS computer-use model on OSWorld-Verified at 77.8%, MoE with
+~3B active params — fits on a single 24 GB GPU):
+
+```bash
+# 1. NVIDIA Container Toolkit installed on host (24 GB GPU minimum)
+# 2. Switch the driver to local vision in .env
+sed -i 's/^VISION_BACKEND=anthropic/VISION_BACKEND=local-uitars/' .env
+
+# 3. Bring up the driver + desktop + Holo3 sidecar
+docker compose --profile local-vision up -d
+```
+
+First boot downloads ~70 GB of Holo3 weights to the `holo3-models`
+named volume (survives `docker compose down`; ~30 s on subsequent
+boots).
+
+**Important — partial ship**: this PR (closing TRACKING D5a) ships the
+**compose sidecar + the ANTHROPIC_API_KEY precondition relaxation**.
+The actual `loop.py` routing — converting Anthropic `tool_use` blocks
+to/from Holo3's OpenAI-shaped responses — is the **v0.3 follow-up**
+filed as [issue #11 (D5b)](https://github.com/karany97/destiny-computer/issues/11).
+Until D5b lands, operators can curl the sidecar directly at
+`http://localhost:8000/v1` (if they add a `ports:` line) or call it
+from inside the driver container at `http://holo3:8000/v1`. The full
+auto-routing arrives in v0.3 (Jul 2026).
+
 ## Security
 
 | Threat | What this does about it |
@@ -228,6 +258,9 @@ Full threat model in [docs/security.md](./docs/security.md).
 | `ATELIER_URL` | *(empty)* | If set, the driver reports back to this Atelier instance via webhook |
 | `DESTINY_API_TOKEN` | *(empty = no auth)* | Optional Bearer-token gate on `/api/*` + `/screenshot`. Generate: `openssl rand -hex 32` |
 | `DESTINY_TASK_RATE_LIMIT` | `10/min` | Per-client (token or IP) leaky-bucket on `POST /api/task`. Format `N/{sec,min,hour}`. 429 + `Retry-After` on overflow. |
+| `HOLO3_ENDPOINT` | `http://holo3:8000/v1` *(when `--profile local-vision` on)* | OpenAI-compatible vLLM endpoint serving Holo3-35B-A3B. Override for host-managed vLLM. |
+| `HOLO3_MODEL` | `Hcompany/Holo3-35B-A3B` | Model id passed to vLLM. |
+| `HOLO3_API_KEY` | `EMPTY` | If you protect vLLM with an API key, set it both here and on the sidecar. |
 | `DESTINY_SNAPSHOT_REPO` | `destiny-desktop-snapshot` | Docker image repo for `POST /api/desktop/snapshot` tags |
 | `DESTINY_SNAPSHOT_TIMEOUT_S` | `60` | `docker commit` ceiling — bump if your desktop is huge |
 | `DESTINY_RESTORE_TIMEOUT_S` | `60` | `docker run` ceiling for `POST /api/desktop/restore` |

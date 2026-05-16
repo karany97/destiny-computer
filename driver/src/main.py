@@ -385,10 +385,15 @@ def submit_task(req: TaskRequest, bg: BackgroundTasks) -> JSONResponse:
             f"daily cap ${MAX_USD:.2f} already reached; try tomorrow or raise MAX_USD_PER_DAY",
         )
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    # Issue #7 / D5 — only require ANTHROPIC_API_KEY when the active
+    # vision backend actually calls Anthropic. VISION_BACKEND=local-*
+    # paths route to the local vLLM sidecar (full loop.py wiring lands
+    # in v0.3 / D5b) and don't need an Anthropic key.
+    if VISION_BACKEND == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(
             500,
-            "ANTHROPIC_API_KEY not set — driver can't reach the model",
+            "ANTHROPIC_API_KEY not set — driver can't reach the model "
+            "(set ANTHROPIC_API_KEY or switch VISION_BACKEND to local-*)",
         )
 
     task_id = f"task_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"

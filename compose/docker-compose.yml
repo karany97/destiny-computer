@@ -48,11 +48,22 @@ services:
     ports:
       - "${DRIVER_PORT:-8090}:8090"
     environment:
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:?set in .env or use VISION_BACKEND=local-* in v0.2+}"
+      # Required when VISION_BACKEND=anthropic (the default). When
+      # VISION_BACKEND=local-uitars the driver checks the local vLLM
+      # endpoint instead, so an empty string here is fine in that mode.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       DESKTOP_CONTAINER: "destiny-desktop"
       MAX_STEPS_PER_TASK: "${MAX_STEPS_PER_TASK:-30}"
       MAX_USD_PER_DAY: "${MAX_USD_PER_DAY:-1.00}"
       VISION_BACKEND: "${VISION_BACKEND:-anthropic}"
+      # Issue #7 / D5 — when the `local-vision` compose profile is on,
+      # the holo3 sidecar resolves over the compose network and serves
+      # vLLM at :8000. The loop.py routing wiring is the v0.3 follow-up
+      # (filed separately as D5b); for now operators can call the local
+      # vLLM directly via curl while the routing lands.
+      HOLO3_ENDPOINT: "${HOLO3_ENDPOINT:-http://holo3:8000/v1}"
+      HOLO3_MODEL: "${HOLO3_MODEL:-Hcompany/Holo3-35B-A3B}"
+      HOLO3_API_KEY: "${HOLO3_API_KEY:-EMPTY}"
       ATELIER_URL: "${ATELIER_URL:-}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro    # to docker exec into desktop
@@ -64,7 +75,68 @@ services:
       retries: 3
       start_period: 10s
 
+  # Issue #7 / TRACKING D5 — optional Holo3-35B-A3B vLLM sidecar.
+  # Opt-in via the `local-vision` profile so the default `docker
+  # compose up` doesn't try to claim a GPU on hosts without one.
+  # Activate with:
+  #
+  #   # 1. NVIDIA Container Toolkit installed on the host
+  #   # 2. Set VISION_BACKEND=local-uitars in .env (currently informational —
+  #   #    the loop.py routing is the v0.3 follow-up, filed as D5b)
+  #   # 3. docker compose --profile local-vision up -d
+  #
+  # First boot downloads ~70 GB of Holo3 weights to the holo3-models
+  # named volume (survives `docker compose down`). Subsequent boots
+  # ~30 s. 24 GB GPU minimum (RTX 3090 / 4090 / A6000 / A100).
+  #
+  # While the loop.py routing isn't yet wired, operators can curl the
+  # sidecar directly at http://localhost:8000/v1 (if they add a
+  # `ports:` line) or from inside the driver container at
+  # http://holo3:8000/v1 via compose-network DNS.
+  holo3:
+    image: vllm/vllm-openai:latest
+    container_name: destiny-holo3
+    restart: unless-stopped
+    profiles: ["local-vision"]
+    expose:
+      - "8000"
+    environment:
+      HF_HOME: "/cache"
+      VLLM_API_KEY: "${HOLO3_API_KEY:-EMPTY}"
+    volumes:
+      - holo3-models:/cache
+    command:
+      - "--model"
+      - "${HOLO3_MODEL:-Hcompany/Holo3-35B-A3B}"
+      - "--port"
+      - "8000"
+      - "--gpu-memory-utilization"
+      - "0.85"
+      - "--max-model-len"
+      - "16384"
+      - "--enforce-eager"
+      - "--api-key"
+      - "${HOLO3_API_KEY:-EMPTY}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/v1/models > /dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Weight load on first boot is ~3-5 min — don't flap red.
+      start_period: 600s
+
 volumes:
   desktop-home:
   desktop-downloads:
   driver-state:
+  # Holo3 weights — ~70 GB. Survives `docker compose down`. Operators
+  # who want to relocate set `docker volume rm destiny-computer_holo3-models`
+  # then bind-mount their preferred path on the holo3 service.
+  holo3-models:
