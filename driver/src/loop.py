@@ -42,7 +42,13 @@ from typing import Any, Callable, Dict, List, Optional
 
 from anthropic import Anthropic, APIError
 
-from . import desktop as D  # ✱ relative for in-package import
+# Support both package import (when used as `destiny_driver.loop`) and
+# script-style import (when uvicorn loads $HOME/destiny-driver/main.py
+# directly with the parent dir on PYTHONPATH and no __init__.py).
+try:
+    from . import desktop as D  # ✱ relative for in-package import
+except ImportError:
+    import desktop as D  # type: ignore[no-redef]
 
 log = logging.getLogger(__name__)
 
