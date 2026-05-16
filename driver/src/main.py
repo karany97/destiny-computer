@@ -56,9 +56,11 @@ from collections import deque
 try:
     from . import desktop as D
     from . import loop as L
+    from . import snapshot as SN
 except ImportError:
     import desktop as D  # type: ignore[no-redef]
     import loop as L  # type: ignore[no-redef]
+    import snapshot as SN  # type: ignore[no-redef]
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s | %(message)s")
@@ -512,6 +514,100 @@ def budget() -> JSONResponse:
         "remaining_usd": round(max(0.0, MAX_USD - total_usd), 4),
         "per_task_usd": {k: round(v, 4) for k, v in per_task.items()},
     })
+
+
+# ─── Desktop snapshot/restore (issue #6 / TRACKING D4) ────────────────────
+
+
+class SnapshotCreateRequest(BaseModel):
+    note: Optional[str] = Field(
+        None, max_length=200,
+        description="Operator-supplied free-form label, e.g. 'after Shopify login'",
+    )
+
+
+class SnapshotRestoreRequest(BaseModel):
+    snapshot_id: str = Field(..., min_length=1, max_length=128,
+                             description="The snap_… id returned by /api/desktop/snapshot")
+
+
+@app.post("/api/desktop/snapshot", dependencies=[Depends(require_token)],
+          status_code=201)
+def create_desktop_snapshot(req: SnapshotCreateRequest) -> JSONResponse:
+    """Commit the current desktop container to a tagged image + record metadata.
+
+    Returns 201 + the Snapshot record. The snapshot tag lives in the local
+    docker image registry as `destiny-desktop-snapshot:<id>`; restore with
+    `POST /api/desktop/restore`.
+
+    Refuses (503) if the desktop container isn't running — operator can't
+    snapshot a stopped container.
+    """
+    if not _desktop_reachable():
+        raise HTTPException(503, "desktop container unreachable")
+    try:
+        snap = SN.create_snapshot(STATE_DIR, note=req.note)
+    except SN.SnapshotError as e:
+        raise HTTPException(500, str(e)) from e
+    return JSONResponse(snap.to_jsonable(), status_code=201)
+
+
+@app.get("/api/desktop/snapshots", dependencies=[Depends(require_token)])
+def list_desktop_snapshots() -> JSONResponse:
+    """List snapshots most-recent first."""
+    snaps = SN.list_snapshots(STATE_DIR)
+    return JSONResponse({
+        "snapshots": [s.to_jsonable() for s in snaps],
+        "count": len(snaps),
+    })
+
+
+@app.delete("/api/desktop/snapshots/{snapshot_id}",
+            dependencies=[Depends(require_token)])
+def delete_desktop_snapshot(snapshot_id: str) -> JSONResponse:
+    """Remove a snapshot. Refuses to delete the most-recent (409).
+
+    Returns {ok: True} on success, 404 if the id is unknown.
+    """
+    try:
+        ok = SN.delete_snapshot(STATE_DIR, snapshot_id)
+    except SN.SnapshotError as e:
+        # The "most-recent" guard raises SnapshotError — map to 409 so
+        # the caller knows this is a deliberate refusal, not a bug.
+        raise HTTPException(409, str(e)) from e
+    if not ok:
+        raise HTTPException(404, f"unknown snapshot id: {snapshot_id}")
+    return JSONResponse({"ok": True, "deleted": snapshot_id})
+
+
+@app.post("/api/desktop/restore", dependencies=[Depends(require_token)],
+          status_code=202)
+def restore_desktop_snapshot(req: SnapshotRestoreRequest) -> JSONResponse:
+    """Swap the running desktop container for one based on the snapshot.
+
+    DESTRUCTIVE: stops + removes the current container, then runs a new
+    one from the snapshot tag. Port bindings, volume mounts, and env
+    vars are preserved from the current container so the swap is
+    invisible to /screenshot / /api/task callers (as long as they
+    handle the brief unreachable window during the swap).
+
+    Returns 202 + the snapshot record. The new container needs ~3-10s
+    to boot before /screenshot works again; callers should poll /health.
+    """
+    if not _desktop_reachable():
+        raise HTTPException(503, "desktop container unreachable — can't preserve config across restore")
+    try:
+        snap = SN.restore_snapshot(STATE_DIR, req.snapshot_id)
+    except SN.SnapshotError as e:
+        msg = str(e)
+        if "unknown snapshot id" in msg:
+            raise HTTPException(404, msg) from e
+        raise HTTPException(500, msg) from e
+    return JSONResponse({
+        "ok": True,
+        "restored_from": snap.to_jsonable(),
+        "note": "container is restarting; poll /health for desktop_reachable",
+    }, status_code=202)
 
 
 if __name__ == "__main__":
