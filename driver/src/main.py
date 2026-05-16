@@ -43,9 +43,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import AsyncIterator, Dict, List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+import hmac
 
 # Allow running either as a package (`python -m destiny_driver.main`) or
 # as a script inside the container (`python main.py`). The container puts
@@ -73,6 +74,21 @@ LEDGER_FILE = STATE_DIR / "cost-ledger.jsonl"
 TASKS_DIR = STATE_DIR / "tasks"
 TASKS_DIR.mkdir(parents=True, exist_ok=True)
 LEGACY_TASKS_FILE = STATE_DIR / "tasks.jsonl"  # v0.1 compatibility — keep writing the index
+
+# Optional Bearer-token auth on every endpoint that touches state or
+# spends money. Default empty = no auth required (back-compat with the
+# v0.2 README which assumes operators bind HOST=127.0.0.1 and proxy
+# externally). Operators who want code-level gating set this AND clients
+# send `Authorization: Bearer <token>`.
+#
+# Read at REQUEST time (not module-load) so:
+#   a) `uvicorn --reload` picks up rotations live
+#   b) tests can monkeypatch the env without re-import
+#
+# This is the same pattern as atelier-os PR #13 — we deliberately use a
+# DIFFERENT env name (DESTINY_API_TOKEN) so an operator running BOTH
+# repos in the same fleet can rotate them independently.
+_API_TOKEN_ENV_NAME = "DESTINY_API_TOKEN"
 
 app = FastAPI(
     title="destiny-computer-driver",
@@ -135,6 +151,46 @@ def _index_task(task_id: str, goal: str) -> None:
         f.write(json.dumps(row) + "\n")
 
 
+# ─── Auth dependency ───────────────────────────────────────────────────────
+
+
+def _current_token() -> str:
+    """Read the configured token at request time (env, not module load)."""
+    return os.environ.get(_API_TOKEN_ENV_NAME, "") or ""
+
+
+def require_token(authorization: Optional[str] = Header(default=None)) -> None:
+    """FastAPI dependency that gates an endpoint behind a Bearer token.
+
+    Behaviour:
+      - DESTINY_API_TOKEN env unset/empty → no-op (back-compat default).
+      - Set → require `Authorization: Bearer <token>` header.
+        Missing/malformed/wrong → 401 with WWW-Authenticate: Bearer.
+
+    Constant-time comparison via `hmac.compare_digest` — defeats timing
+    attacks that would otherwise let an attacker recover the token byte
+    by byte from response-time differences.
+
+    Header pattern only — no `?token=...` query param fallback. Query
+    params leak via nginx/Caddy access logs, browser history, and the
+    Referer header. The atelier-os auth (PR #13) explicitly rejects
+    query-param tokens for the same reason; we mirror that choice.
+    """
+    token = _current_token()
+    if not token:
+        return  # auth disabled
+    if not authorization:
+        raise HTTPException(401, "missing Authorization header",
+                            headers={"WWW-Authenticate": "Bearer"})
+    parts = authorization.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(401, "expected 'Authorization: Bearer <token>'",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if not hmac.compare_digest(parts[1].encode("utf-8"), token.encode("utf-8")):
+        raise HTTPException(401, "invalid token",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+
 # ─── Endpoints ─────────────────────────────────────────────────────────────
 
 
@@ -155,9 +211,15 @@ def health() -> Dict[str, object]:
     }
 
 
-@app.get("/screenshot")
+@app.get("/screenshot", dependencies=[Depends(require_token)])
 def screenshot() -> Response:
-    """Take a PNG of the current desktop. Mostly for the chat's preview pane."""
+    """Take a PNG of the current desktop. Mostly for the chat's preview pane.
+
+    Gated: a screenshot of the desktop the operator is watching CAN leak
+    PII (browser tabs, file manager contents, terminal scrollback). Even
+    though this isn't a state-mutating endpoint, the privacy surface is
+    real — require the token when one is set.
+    """
     if not _desktop_reachable():
         raise HTTPException(503, "desktop container unreachable")
     try:
@@ -220,7 +282,7 @@ def _run_task_blocking(task_id: str, goal: str, max_steps: int) -> None:
             pass
 
 
-@app.post("/api/task")
+@app.post("/api/task", dependencies=[Depends(require_token)])
 def submit_task(req: TaskRequest, bg: BackgroundTasks) -> JSONResponse:
     """Accept a goal, kick off the loop in the background, return task_id."""
     if not _desktop_reachable():
@@ -257,7 +319,7 @@ def submit_task(req: TaskRequest, bg: BackgroundTasks) -> JSONResponse:
     }, status_code=202)
 
 
-@app.get("/api/task/{task_id}")
+@app.get("/api/task/{task_id}", dependencies=[Depends(require_token)])
 def get_task(task_id: str) -> JSONResponse:
     p = _transcript_path(task_id)
     if not p.exists():
@@ -275,7 +337,7 @@ def get_task(task_id: str) -> JSONResponse:
         raise HTTPException(500, f"transcript read error: {e}") from e
 
 
-@app.get("/api/task/{task_id}/stream")
+@app.get("/api/task/{task_id}/stream", dependencies=[Depends(require_token)])
 async def stream_task(task_id: str) -> StreamingResponse:
     """Server-Sent-Events stream of step records.
 
@@ -315,7 +377,7 @@ async def stream_task(task_id: str) -> StreamingResponse:
     )
 
 
-@app.get("/api/tasks")
+@app.get("/api/tasks", dependencies=[Depends(require_token)])
 def list_tasks(limit: int = 20) -> JSONResponse:
     """Recent submitted tasks. Reads tasks.jsonl, then merges live transcripts."""
     rows: List[dict] = []
@@ -340,7 +402,7 @@ def list_tasks(limit: int = 20) -> JSONResponse:
     return JSONResponse({"tasks": rows})
 
 
-@app.get("/api/budget")
+@app.get("/api/budget", dependencies=[Depends(require_token)])
 def budget() -> JSONResponse:
     """Today's cumulative spend, breakdown per task, remaining budget."""
     today = time.strftime("%Y-%m-%d")

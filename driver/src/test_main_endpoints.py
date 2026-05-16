@@ -26,12 +26,15 @@ import pytest
 
 @pytest.fixture
 def app(monkeypatch, tmp_path):
-    """Fresh import of main with state dir pointed at tmp_path."""
+    """Fresh import of main with state dir pointed at tmp_path.
+
+    Pop ONLY `main` from sys.modules — test_loop_ledger.py relies on
+    `importlib.reload(L)` against the loop module, and popping `loop`
+    here breaks the reload (sys.modules name mismatch).
+    """
     monkeypatch.setenv("STATE_DIR", str(tmp_path))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
-    # Force re-import so STATE_DIR takes effect
-    for mod in ("desktop", "loop", "main"):
-        sys.modules.pop(mod, None)
+    sys.modules.pop("main", None)
     sys.path.insert(0, "/tmp/destiny-computer/driver/src")
     import main as M  # type: ignore[import-not-found]
     return M
