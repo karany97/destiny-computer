@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 [![Composes with: Destiny Atelier](https://img.shields.io/badge/composes%20with-Destiny%20Atelier-c2410c)](https://github.com/karany97/nandai-atelier)
 [![Stack: KasmVNC + Anthropic Computer Use](https://img.shields.io/badge/stack-KasmVNC%20%2B%20Anthropic%20Computer%20Use-3b82f6)](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo)
-[![Tests](https://img.shields.io/badge/tests-260%2F260-22c55e)](./driver/src)
+[![Tests](https://img.shields.io/badge/tests-285%2F285-22c55e)](./driver/src)
 
 </div>
 
@@ -213,6 +213,7 @@ you're brave).
 | AI exfiltrating your secrets | Browser inside the desktop has its OWN cookie jar (Docker volume), separate from your real browser. AI can see what you logged it into; it can't read your real Chrome. |
 | Strangers driving your desktop | KasmVNC password gate by default. Optional Caddy + Authelia for SSO. Optional [pingate](https://github.com/karany97/pingate) for the simple PIN-cookie pattern. |
 | Random callers hitting `/api/task` and spending your Anthropic credits | Optional `DESTINY_API_TOKEN` env — set it and every `/api/*` + `/screenshot` requires `Authorization: Bearer <token>`. Constant-time comparison via `hmac.compare_digest`. `/health` stays open for Docker healthchecks. Query-param tokens deliberately rejected (leak via access logs + Referer). Same pattern as atelier-os (different env name so the two fleets can rotate independently). |
+| Authenticated client bursting `/api/task` to burn the daily cap in seconds | Per-client leaky-bucket — default 10 tasks/minute, configurable via `DESTINY_TASK_RATE_LIMIT=N/{sec,min,hour}`. Keyed by Bearer token when set, else client IP. Returns 429 + `Retry-After`. Rate-limit dep runs AFTER auth so a 401 doesn't consume a slot (no bucket-exhaust DoS via bad-auth spam). |
 | AI typing into your real keyboard | Impossible — the desktop is INSIDE a container; the AI's clicks/keystrokes never reach your host. |
 | Long-running task spending unbounded $ on Anthropic | `MAX_STEPS_PER_TASK` env var (default 30); `MAX_USD_PER_DAY` env var (default 1.00). Hits the cap → driver stops + tells the chat. |
 
@@ -226,6 +227,7 @@ Full threat model in [docs/security.md](./docs/security.md).
 | `DESKTOP_PASSWORD` | *(required)* | Password for KasmVNC web access |
 | `ATELIER_URL` | *(empty)* | If set, the driver reports back to this Atelier instance via webhook |
 | `DESTINY_API_TOKEN` | *(empty = no auth)* | Optional Bearer-token gate on `/api/*` + `/screenshot`. Generate: `openssl rand -hex 32` |
+| `DESTINY_TASK_RATE_LIMIT` | `10/min` | Per-client (token or IP) leaky-bucket on `POST /api/task`. Format `N/{sec,min,hour}`. 429 + `Retry-After` on overflow. |
 | `MAX_STEPS_PER_TASK` | `30` | Hard cap on autonomous action steps per goal |
 | `MAX_USD_PER_DAY` | `1.00` | Anthropic budget cap |
 | `VISION_BACKEND` | `anthropic` | `anthropic` \| `local-uitars` \| `local-moondream` (v0.2+) |

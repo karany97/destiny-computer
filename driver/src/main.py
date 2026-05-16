@@ -43,10 +43,12 @@ from collections import defaultdict
 from pathlib import Path
 from typing import AsyncIterator, Dict, List, Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 import hmac
+import threading
+from collections import deque
 
 # Allow running either as a package (`python -m destiny_driver.main`) or
 # as a script inside the container (`python main.py`). The container puts
@@ -157,6 +159,91 @@ def _index_task(task_id: str, goal: str) -> None:
 def _current_token() -> str:
     """Read the configured token at request time (env, not module load)."""
     return os.environ.get(_API_TOKEN_ENV_NAME, "") or ""
+
+
+# ─── Rate limiter (issue #5 / TRACKING D3) ────────────────────────────────
+#
+# In-memory leaky bucket per client. Keyed by Bearer token when one is set
+# (so two operators sharing a fleet are throttled independently), else by
+# client IP. The bucket is a deque of timestamps; drop expired entries on
+# each check, refuse if the bucket is full.
+#
+# Why in-memory and not Redis: the v0.2 driver is single-process; multiple
+# operators would run multiple drivers (or use atelier-os). For the in-
+# process case, threading.Lock + dict-of-deque is the simplest correct
+# answer and adds no operational footprint.
+#
+# Tradeoff: rate-limit state evaporates on driver restart. That's deliberate
+# — the budget cap (MAX_USD_PER_DAY, persisted to disk) is the real safety
+# net for cumulative spend. The rate limiter only protects against burst.
+
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
+
+
+def _parse_rate_limit(spec: str) -> tuple:
+    """Parse 'N/PERIOD' → (max_requests, period_seconds).
+
+    PERIOD ∈ {sec, min, hour}. Invalid spec → safe default (10/min).
+    """
+    PERIODS = {"sec": 1, "min": 60, "hour": 3600}
+    try:
+        n_str, period = spec.split("/", 1)
+        n = int(n_str)
+        seconds = PERIODS[period.strip().lower()]
+        if n <= 0:
+            return (10, 60)  # zero/negative → default
+        return (n, seconds)
+    except Exception:
+        return (10, 60)
+
+
+def _client_id(request: Request, authorization: Optional[str]) -> str:
+    """Per-client key — token when present, else IP."""
+    if authorization:
+        parts = authorization.split(None, 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            return f"token:{parts[1]}"
+    if request.client:
+        return f"ip:{request.client.host}"
+    return "ip:unknown"
+
+
+def _rate_limit_check(client_id: str) -> Optional[float]:
+    """Returns None if allowed; else seconds-until-next-slot for Retry-After."""
+    spec = os.environ.get("DESTINY_TASK_RATE_LIMIT", "10/min")
+    max_n, period = _parse_rate_limit(spec)
+    now = time.time()
+    with _RATE_LIMIT_LOCK:
+        bucket = _RATE_LIMIT_BUCKETS.setdefault(client_id, deque())
+        cutoff = now - period
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= max_n:
+            retry_after = bucket[0] + period - now
+            return max(1.0, retry_after)
+        bucket.append(now)
+        return None
+
+
+def enforce_rate_limit(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+) -> None:
+    """FastAPI dependency — gate /api/task behind a leaky-bucket rate limit.
+
+    Applies AFTER require_token (which 401s before this runs). Returns
+    429 + Retry-After header when the bucket is full.
+    """
+    client_id = _client_id(request, authorization)
+    retry_after = _rate_limit_check(client_id)
+    if retry_after is not None:
+        spec = os.environ.get("DESTINY_TASK_RATE_LIMIT", "10/min")
+        raise HTTPException(
+            429,
+            f"task rate limit exceeded ({spec}); retry in {int(retry_after)}s",
+            headers={"Retry-After": str(int(retry_after))},
+        )
 
 
 def require_token(authorization: Optional[str] = Header(default=None)) -> None:
@@ -282,7 +369,7 @@ def _run_task_blocking(task_id: str, goal: str, max_steps: int) -> None:
             pass
 
 
-@app.post("/api/task", dependencies=[Depends(require_token)])
+@app.post("/api/task", dependencies=[Depends(require_token), Depends(enforce_rate_limit)])
 def submit_task(req: TaskRequest, bg: BackgroundTasks) -> JSONResponse:
     """Accept a goal, kick off the loop in the background, return task_id."""
     if not _desktop_reachable():

@@ -50,20 +50,14 @@ Each entry has:
 
 ## Currently-tracked items (v0.2.x)
 
-### D3 — Per-task rate limit on `/api/task`
+### D3 — (CLOSED via PR #9, [#5](https://github.com/karany97/destiny-computer/issues/5)) ✅ Per-task rate limit on `/api/task`
 
-- **What**: A misconfigured or compromised client could submit 100
-  tasks/second and burn the entire `MAX_USD_PER_DAY` before the
-  budget check on task 2 has even completed.
-- **Where**: `driver/src/main.py::submit_task` — no per-IP / per-token
-  rate limit
-- **Why deferred**: v0.2.x ships for single-operator deployments. The
-  per-day budget cap is the safety net.
-- **Acceptance**: simple in-memory leaky-bucket keyed by client
-  (token if set, else IP); default 10 tasks/minute; configurable
-  via `DESTINY_TASK_RATE_LIMIT`.
+- **What**: A misconfigured or compromised client could submit 100 tasks/second and burn the entire `MAX_USD_PER_DAY` before the budget check on task 2 has even completed.
+- **Where**: `driver/src/main.py::submit_task` — `enforce_rate_limit` dependency
+- **Resolution**: In-memory leaky-bucket keyed by Bearer token (when `DESTINY_API_TOKEN` is set) or by client IP. Default 10/min, configurable via `DESTINY_TASK_RATE_LIMIT` env in format `N/PERIOD` where PERIOD ∈ {sec, min, hour}. Invalid spec → safe default. Returns 429 + `Retry-After` header on overflow (RFC 6585). Bucket state lives in driver memory only — restart clears it (the `MAX_USD_PER_DAY` cap on disk is the cumulative-spend safety net). Rate-limit dep runs AFTER auth so a 401 doesn't consume a slot (regression-guarded — otherwise an attacker could spam bad tokens to exhaust the bucket).
+- **Tests**: +25 (`test_rate_limit.py`) — `_parse_rate_limit` (6 incl. invalid/zero/case-insensitive fallbacks), `_client_id` (4 incl. token-preferred + IP fallback + missing client), `_rate_limit_check` (5 incl. under-cap, at-cap, refill-after-period, per-client isolation, Retry-After floor), endpoint (8 incl. 202/429 paths, Retry-After header, configured-spec in error message, default 10/min, per-token isolation, 401 doesn't consume slot, restart evaporates state), regression guards (2). Total now **285/285 in 1.88s**.
 
-### D4 — Snapshot/restore for the desktop container
+### D4 — ([#6](https://github.com/karany97/destiny-computer/issues/6)) Snapshot/restore for the desktop container
 
 - **What**: There's no equivalent of `POST /api/desktop/snapshot` to
   freeze a "trained" desktop state (logged-in browser sessions,
@@ -75,7 +69,7 @@ Each entry has:
   `POST /api/desktop/restore {snapshot_id}` swaps the running
   container for one based on the snapshot.
 
-### D5 — Local-vision backend (no Anthropic dependency)
+### D5 — ([#7](https://github.com/karany97/destiny-computer/issues/7)) Local-vision backend (no Anthropic dependency)
 
 - **What**: Currently every task spends real money on Anthropic
   Computer Use. Operators on a tight budget can't run the loop at
@@ -90,7 +84,7 @@ Each entry has:
   vLLM with Holo3, `VISION_BACKEND=local-uitars` actually routes
   through it.
 
-### D6 — Multi-user `/api/task` (different operator personas)
+### D6 — ([#8](https://github.com/karany97/destiny-computer/issues/8)) Multi-user `/api/task` (different operator personas) — OUT OF SCOPE
 
 - **What**: All tasks run as the same operator persona. No notion of
   "this is Janvi's task, that one is Devika's".
@@ -100,7 +94,7 @@ Each entry has:
   need that, use atelier-os, not destiny-computer.
 - **Acceptance**: explicitly out of scope for this repo — destiny-
   computer stays single-desktop. This entry exists only to point
-  newcomers at the sibling repo.
+  newcomers at the sibling repo. Issue stays open as a sign-post.
 
 ## Items we WILL NOT do (explicitly out of scope)
 
