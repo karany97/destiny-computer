@@ -1,0 +1,70 @@
+name: destiny-computer
+
+services:
+  # The desktop the AI owns. KasmVNC (https://kasmweb.com/kasmvnc) gives
+  # us a browser-renderable Linux desktop in a single container.
+  # The `/home/kasm-user` volume persists between restarts — so the
+  # browser tabs the AI opened yesterday are still there today.
+  desktop:
+    image: kasmweb/desktop:1.16.1
+    container_name: destiny-desktop
+    restart: unless-stopped
+    shm_size: "1g"          # KasmVNC needs shared memory for video buffer
+    ports:
+      - "${KASMVNC_PORT:-6901}:6901"
+    environment:
+      VNC_PW: "${DESKTOP_PASSWORD:?DESKTOP_PASSWORD is required — set it in .env}"
+      KASM_USER: "operator"
+      RESOLUTION: "${DESKTOP_RESOLUTION:-1280x720}"
+    volumes:
+      - desktop-home:/home/kasm-user        # persistent home (~ stays between restarts)
+      - desktop-downloads:/home/kasm-user/Downloads
+    # Security hardening — the AI can break the desktop but not escape it
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN           # required by Chrome inside the container
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "https://127.0.0.1:6901/", "-k"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # The driver — takes natural-language goals from a chat client,
+  # screenshots the desktop, decides the next click via Anthropic
+  # Computer Use (or a local vision model in v0.2+), executes the
+  # action over xdotool/xwd via docker exec into the desktop container,
+  # narrates the result back.
+  driver:
+    build: ../driver
+    container_name: destiny-driver
+    restart: unless-stopped
+    depends_on:
+      desktop:
+        condition: service_healthy
+    ports:
+      - "${DRIVER_PORT:-8090}:8090"
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:?set in .env or use VISION_BACKEND=local-* in v0.2+}"
+      DESKTOP_CONTAINER: "destiny-desktop"
+      MAX_STEPS_PER_TASK: "${MAX_STEPS_PER_TASK:-30}"
+      MAX_USD_PER_DAY: "${MAX_USD_PER_DAY:-1.00}"
+      VISION_BACKEND: "${VISION_BACKEND:-anthropic}"
+      ATELIER_URL: "${ATELIER_URL:-}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro    # to docker exec into desktop
+      - driver-state:/state                              # task history, cost ledger
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  desktop-home:
+  desktop-downloads:
+  driver-state:

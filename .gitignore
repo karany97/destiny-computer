@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+.env
+.env.local
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# Docker compose runtime
+state/
+volumes/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
