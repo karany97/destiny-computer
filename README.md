@@ -116,11 +116,13 @@ destiny-computer/
 
 ## What's supported
 
-| | v0.1 (this) | v0.2 (target Aug) | v0.3 |
+| | v0.2 (this) | v0.3 | v0.4 |
 |---|---|---|---|
 | Persistent desktop (KasmVNC, files survive restart) | ✅ | ✅ | ✅ |
-| Conversational narration ("opened X, want me to Y?") | 🚧 driver stub | ✅ | ✅ |
-| Anthropic Computer Use API path | 🚧 wired but untested | ✅ | ✅ |
+| Conversational narration ("opened X, want me to Y?") | ✅ (SSE stream) | ✅ | ✅ |
+| Anthropic Computer Use API path | ✅ (computer_20251124, Sonnet 4.5) | ✅ | ✅ |
+| Per-task cost ledger + daily cap enforcement | ✅ | ✅ | ✅ |
+| Live transcript stream (Server-Sent-Events) | ✅ (`/api/task/{id}/stream`) | ✅ | ✅ |
 | Local-only vision (UI-TARS / OmniParser / Moondream) | ❌ | ✅ | ✅ |
 | Multi-user (one desktop per user) | ❌ | 🚧 | ✅ |
 | Snapshot + restore desktop state | ❌ | ✅ | ✅ |
@@ -134,7 +136,7 @@ destiny-computer/
 |---|---|
 | Self-hosted on your spare PC | $0 |
 | Self-hosted on a $5/mo VPS (Hetzner CX21) | $0.007 |
-| Anthropic Computer Use API (model side) | $0.30–$1.20 per task (avg 50 steps × Opus 4.7 pricing) |
+| Anthropic Computer Use API (model side, Sonnet 4.5 default) | $0.05–$0.40 per task (avg 30 steps); Opus 4.5 override 5× that |
 | Local vision model (UI-TARS-1.5-7B) | $0 + your GPU |
 
 Default `.env.example` uses Anthropic Computer Use because it's the
@@ -167,9 +169,9 @@ Full threat model in [docs/security.md](./docs/security.md).
 
 ## Roadmap
 
-- **v0.1 (now)** — KasmVNC desktop + thin FastAPI driver stub + Atelier iframe integration
-- **v0.2 (target Aug 2026)** — Full Anthropic Computer Use loop wired in, conversational narration, snapshot/restore
-- **v0.3 (target Oct 2026)** — Local vision backend (UI-TARS-1.5-7B), multi-user, file-drop, real-time keystrokes from chat
+- **v0.2 (now)** — KasmVNC desktop + Anthropic Computer Use loop wired end-to-end (Sonnet 4.5 default, `computer_20251124` schema). Per-task cost ledger, daily cap enforcement, Server-Sent-Events stream of step records for live narration in the chat. Action surface: mouse_move, left/right/middle/double/triple_click, click+drag, type, key, hold_key, scroll, wait, cursor_position — every action runs via `docker exec destiny-desktop xdotool ...` (no host X11 dependency).
+- **v0.3 (target Jul 2026)** — Local vision backend (UI-TARS-1.5-7B), snapshot/restore, file-drop from chat to desktop home
+- **v0.4 (target Sep 2026)** — Multi-user (one desktop per user), real-time keystrokes from chat to desktop
 - **v0.4** — Recipe library ("scrape this site", "fill this form", "do this every morning at 7am"), with operator-shareable templates
 
 ## License
