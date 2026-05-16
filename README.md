@@ -60,6 +60,32 @@ keys it created, partial downloads — survives reboots.
 The same PNG path the Anthropic Computer Use loop sends to the model on
 every iteration — this is what the AI sees when deciding the next click.*
 
+## Why this isn't UI-TARS-desktop (the obvious competitor)
+
+[bytedance/UI-TARS-desktop](https://github.com/bytedance/UI-TARS-desktop)
+is an **Electron app you install on your real laptop** that takes over
+your real keyboard with a ByteDance vision model. Destiny Computer is
+`docker compose up` that gives every teammate **their own persistent
+Linux desktop**, embedded in your chat, driven by any model you want
+(Anthropic, local Qwen, mix). The AI's files survive restarts. You
+watch every click. You take the mouse back any time. MIT,
+**$0.05–$0.40 per task**, your data never leaves your network.
+
+| | UI-TARS-desktop | Destiny Computer |
+|---|---|---|
+| Form factor | Electron app on your laptop | `docker compose up` web service |
+| Per-employee isolation | Single user | One container per teammate |
+| Persistence | Cloud VMs release on navigate-away | `/home/operator/` survives reboots |
+| Embeddable in your chat | No (standalone window) | Yes (Atelier right pane + SSE stream) |
+| Model choice | UI-TARS-1.5-7B / Seed-1.5-VL only | Any model (Anthropic / local / mix) |
+| Fleet (multi-machine) | No | Yes via `@hostname` syntax (network-agent) |
+| Audit log per turn | No | Step records over SSE, every action logged |
+| Self-host floor | Local mode = your real OS | 100% your Docker host, no cloud dep |
+| Governance | ByteDance roadmap | MIT, no corporate gatekeeper |
+
+The "in the market of Iron, sell Gold" angle: UI-TARS gives you one
+Electron window. We give you a per-employee fleet you address by name.
+
 ## Why this isn't OpenHands or Claude Cowork or E2B
 
 **OpenHands** — open source, has a browser+terminal loop, but the UX is
