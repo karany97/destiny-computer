@@ -30,6 +30,22 @@ goals; this repo turns them into clicks; the operator watches both
 surfaces in one window. Hand off, take back, never sign in to a SaaS
 to do it.
 
+### "One desktop" vs "a fleet of desktops"
+
+This repo is the **single-desktop** pattern — one KasmVNC container,
+one driver, one Anthropic API key, ~600 LOC of Python you can read on
+a coffee break. Best for learning the moving parts, demos, or "I want
+exactly one AI body and no surprises."
+
+For the **multi-session** flavor — N Sway/Wayland sessions behind one
+FastAPI fleet, swappable open-weights model
+([Holo3-35B-A3B](https://huggingface.co/HCompany/Holo3-35B-A3B), Apache
+2.0, OSWorld-Verified 77.8%), iframe-embed any session anywhere — see
+the sibling repo `karany97/atelier-os` (opens this week).
+
+Same `/api/computer/*` shape, so atelier wires up to either with
+zero changes.
+
 We run this in production with one desktop per team member (Karan,
 Janvi, Devika, Priya, Aayush). The container persists `/home/operator/`
 between restarts so the AI's work — open tabs, generated scripts, ssh
