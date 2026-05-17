@@ -124,6 +124,37 @@ you still have to *supply* the VM. There's no managed product that pairs
 "persistent desktop + watchable VNC + conversational handoff + your
 hardware or a $5 VPS" — until now.
 
+## Comparison
+
+The consolidated view (UI-TARS row mirrors the deeper table above for
+scanning convenience):
+
+| | UI-TARS-desktop | Anthropic quickstart | OpenHands | Claude Cowork | E2B / Scrapybara | Bytebot | **Destiny Computer** |
+|---|---|---|---|---|---|---|---|
+| Form factor | Electron app on host | Docker on your machine | Docker on your machine | macOS/Windows app | Vendor cloud | Vendor cloud (archived) | **`docker compose up` web service** |
+| Persistent /home | n/a (host) | ❌ (ephemeral container) | ❌ (ephemeral workspace) | n/a (host) | 24h session cap | n/a | **✅ named volume survives `down`** |
+| Per-task cost ledger + daily cap | ❌ | ❌ | ❌ | ❌ (subscription) | ❌ | ❌ | **✅ `MAX_USD_PER_DAY` atomic** |
+| Live SSE step stream | ❌ | ❌ | log spool | ❌ | ❌ | ❌ | **✅ `/api/task/{id}/stream`** |
+| Snapshot/restore API | ❌ | ❌ | ❌ | ❌ | partial | n/a | **✅ 4 endpoints + most-recent guard** |
+| Bearer-token auth + per-task rate limit | ❌ | ❌ | bring your own | ❌ | vendor | n/a | **✅ both, opt-in** |
+| Local-vision (no Anthropic dep) | ✅ ByteDance only | ❌ | ✅ (BYO) | ❌ | ❌ | ❌ | **✅ Holo3 via vLLM, $0/task** |
+| Install verifier (smoke harness) | ❌ | ❌ | ❌ | ❌ | ❌ | n/a | **✅ `scripts/launch-smoke.py`** |
+| Cost per active hour | model-only | model-only | model-only | $20–$200/mo | $50–$300/mo always-on | shut down | **$0 hardware + $0.05–$0.40/task** |
+| License | Apache 2.0 | MIT | MIT | proprietary | proprietary | (archived) | **MIT** |
+| Tests | unknown | unknown | partial | proprietary | proprietary | n/a | **424 unit, 2.4s** |
+| Maintenance status | ByteDance roadmap | active | active | active | active | **archived** | active (22 PRs / 4 days pre-launch) |
+
+Reading the table: the "**Destiny Computer**" column ticks ✅ on every
+row that pairs *persistent-desktop-the-AI-drives* with *operator-grade
+production discipline* — the cost ledger, snapshot/restore, auth, rate
+limit, install verifier, local-vision option. The other columns each
+ship some subset; none combine all of it for a $0-hardware operator.
+
+For the multi-employee fleet case (one container per teammate, snapshot
+clones for onboarding), use the sibling
+[atelier-os](https://github.com/karany97/atelier-os) repo. Same patterns,
+multi-session shape, identical auth + snapshot + Holo3-sidecar design.
+
 ## Install
 
 ### Quickstart (Docker compose)
