@@ -196,18 +196,21 @@ destiny-computer/
 
 ## What's supported
 
-| | v0.2 (this) | v0.3 | v0.4 |
+| | v0.2.1 (this) | v0.3 | v0.4 |
 |---|---|---|---|
 | Persistent desktop (KasmVNC, files survive restart) | ✅ | ✅ | ✅ |
 | Conversational narration ("opened X, want me to Y?") | ✅ (SSE stream) | ✅ | ✅ |
 | Anthropic Computer Use API path | ✅ (computer_20251124, Sonnet 4.5) | ✅ | ✅ |
 | Per-task cost ledger + daily cap enforcement | ✅ | ✅ | ✅ |
 | Live transcript stream (Server-Sent-Events) | ✅ (`/api/task/{id}/stream`) | ✅ | ✅ |
-| Local-only vision (UI-TARS / OmniParser / Moondream) | ❌ | ✅ | ✅ |
-| Multi-user (one desktop per user) | ❌ | 🚧 | ✅ |
-| Snapshot + restore desktop state | ❌ | ✅ | ✅ |
+| **Local-only vision (Holo3-35B-A3B via vLLM sidecar)** | ✅ (PR #13, `vision.py`) | ✅ | ✅ |
+| **Snapshot + restore desktop state** | ✅ (PR #10, `snapshot.py`) | ✅ | ✅ |
+| **Optional Bearer-token auth + per-task rate limit** | ✅ (PRs #4, #9) | ✅ | ✅ |
+| **Install verifier** (`scripts/launch-smoke.py`) | ✅ (PR #14) | ✅ | ✅ |
+| Multi-user (one desktop per user) — see [atelier-os](https://github.com/karany97/atelier-os) | ❌ (out of scope) | ❌ (out of scope) | ❌ (out of scope) |
 | Real-time keystrokes from chat to desktop | ❌ | ❌ | ✅ |
 | File-drop from chat to desktop home | ❌ | ✅ | ✅ |
+| OmniParser / Moondream / GPT-4o vision backends | ❌ | ✅ | ✅ |
 | Browser cookies persist across "restart driver" | ✅ (via volume) | ✅ | ✅ |
 
 ## Cost reality
@@ -220,8 +223,12 @@ destiny-computer/
 | Local vision model (UI-TARS-1.5-7B) | $0 + your GPU |
 
 Default `.env.example` uses Anthropic Computer Use because it's the
-SOTA today; switch to local vision when v0.2 lands (or earlier if
-you're brave).
+SOTA today; one env-var flip (`VISION_BACKEND=local-uitars`) + the
+opt-in `local-vision` compose profile gives you fully-local Holo3
+inference at $0/task. Both paths route through the same
+`driver/src/vision.py` abstraction (`VisionBackend` ABC); switching
+is reversible by changing the env back. See the **Local vision**
+subsection below for the 3-command recipe.
 
 ### Local vision (issue #7 — opt-in `local-vision` compose profile)
 
@@ -283,15 +290,28 @@ Full threat model in [docs/security.md](./docs/security.md).
 | `DESTINY_RESTORE_TIMEOUT_S` | `60` | `docker run` ceiling for `POST /api/desktop/restore` |
 | `MAX_STEPS_PER_TASK` | `30` | Hard cap on autonomous action steps per goal |
 | `MAX_USD_PER_DAY` | `1.00` | Anthropic budget cap |
-| `VISION_BACKEND` | `anthropic` | `anthropic` \| `local-uitars` \| `local-moondream` (v0.2+) |
+| `VISION_BACKEND` | `anthropic` | `anthropic` \| `local-uitars` (Holo3 via vLLM, PR #13) \| `holo3` (alias) |
 | `DESKTOP_RESOLUTION` | `1280x720` | Desktop screen size |
 
 ## Roadmap
 
-- **v0.2 (now)** — KasmVNC desktop + Anthropic Computer Use loop wired end-to-end (Sonnet 4.5 default, `computer_20251124` schema). Per-task cost ledger, daily cap enforcement, Server-Sent-Events stream of step records for live narration in the chat. Action surface: mouse_move, left/right/middle/double/triple_click, click+drag, type, key, hold_key, scroll, wait, cursor_position — every action runs via `docker exec destiny-desktop xdotool ...` (no host X11 dependency).
-- **v0.3 (target Jul 2026)** — Local vision backend (UI-TARS-1.5-7B), snapshot/restore, file-drop from chat to desktop home
-- **v0.4 (target Sep 2026)** — Multi-user (one desktop per user), real-time keystrokes from chat to desktop
-- **v0.4** — Recipe library ("scrape this site", "fill this form", "do this every morning at 7am"), with operator-shareable templates
+- **v0.2.1 (now — the launch-sprint release)** — full end-to-end shipping
+  state. KasmVNC desktop + Anthropic Computer Use loop (Sonnet 4.5 default,
+  `computer_20251124` schema). Per-task cost ledger, daily cap, SSE step
+  stream. All 11 action verbs via xdotool. **Optional Bearer-token auth**
+  (`DESTINY_API_TOKEN`), **per-task rate limit** (`DESTINY_TASK_RATE_LIMIT`),
+  **snapshot/restore API** (4 endpoints + most-recent delete safeguard),
+  **local-vision routing** (`VISION_BACKEND=local-uitars` via the
+  `local-vision` compose profile, $0/task on a 24 GB GPU), **install
+  verifier** (`scripts/launch-smoke.py`). 424 unit tests, all green
+  in 2.4s. CHANGELOG documents every PR.
+- **v0.3 (target Jul 2026)** — File-drop from chat to desktop home;
+  alternate vision backends (OmniParser, Moondream, GPT-4o); replay
+  via `Last-Event-ID` on the SSE stream so reconnecting clients
+  catch up on history.
+- **v0.4 (target Sep 2026)** — Real-time keystrokes from chat to
+  desktop; recipe library ("scrape this site", "do this every morning
+  at 7am") with operator-shareable templates.
 
 ## License
 
