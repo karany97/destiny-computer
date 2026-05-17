@@ -48,7 +48,20 @@ Each entry has:
   from atelier-os so operators running both fleets can rotate
   independently. +26 tests in `test_api_auth.py`.
 
-## Currently-tracked items (v0.2.x)
+## v0.2.1 launch-sprint deliverables — ALL CLOSED ✅
+
+> Items D3 through D5b below shipped + closed in the v0.2.1 launch
+> sprint (4 PRs across 4 days, May 12–16 2026). Combined with D1/D2
+> above, the test count went from 20 → 424. Zero "partial ship"
+> caveats remain in the README. See [CHANGELOG.md](./CHANGELOG.md)
+> for the per-PR rollup.
+>
+> D6 below stays in this file as an explicit sign-post pointing
+> newcomers at the sibling atelier-os repo for multi-user fleets.
+>
+> The per-item "Total now" lines show the running test-count at
+> each PR's merge time. Current total is 424 (see README badge or
+> CHANGELOG).
 
 ### D3 — (CLOSED via PR #9, [#5](https://github.com/karany97/destiny-computer/issues/5)) ✅ Per-task rate limit on `/api/task`
 
