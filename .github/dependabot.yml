@@ -1,0 +1,38 @@
+# Dependabot config — auto-generated 2026-05-18
+# Schedule: weekly, Monday 06:00 UTC
+# Groups patch + minor updates together; max 5 PRs per ecosystem
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/driver/src"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "automated"
+    groups:
+      pip-patch-minor:
+        update-types:
+          - "patch"
+          - "minor"
+
+  - package-ecosystem: "docker"
+    directory: "/driver"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "automated"
+    groups:
+      docker-patch-minor:
+        update-types:
+          - "patch"
+          - "minor"
