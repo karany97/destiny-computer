@@ -103,7 +103,7 @@ Each entry has:
 ### D6 — ([#8](https://github.com/karany97/destiny-computer/issues/8)) Multi-user `/api/task` (different operator personas) — OUT OF SCOPE
 
 - **What**: All tasks run as the same operator persona. No notion of
-  "this is Janvi's task, that one is Devika's".
+  "this is Alice's task, that one is Bob's".
 - **Where**: there's no user model in `main.py`
 - **Why deferred**: v0.2 ships single-user. Multi-user is what
   atelier-os exists to solve (one container per teammate). If you

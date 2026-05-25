@@ -48,7 +48,7 @@ Same `/api/computer/*` shape, so atelier wires up to either with
 zero changes.
 
 We run this in production with one desktop per team member (Karan,
-Janvi, Devika, Priya, Aayush). The container persists `/home/operator/`
+Alice, Bob, Carol, Dave). The container persists `/home/operator/`
 between restarts so the AI's work — open tabs, generated scripts, ssh
 keys it created, partial downloads — survives reboots.
 
