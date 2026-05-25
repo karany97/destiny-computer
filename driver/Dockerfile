@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Need the docker CLI so the driver can `docker exec` into the desktop
 # container (where xdotool / xwd / Firefox actually live). The CLI binary
